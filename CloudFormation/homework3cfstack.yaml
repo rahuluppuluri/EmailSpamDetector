@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: A Template for email Spam classification
+
+Parameters:
+  E1:
+    Type: String
+    Description: Spam classification Sagemaker endpoint
+    Default: ""
+  SESBucket:
+    Type: String
+    Default: cf-homework3-email-bucket
+  LambdaBucket:
+    Type: String
+    Default: homework3lambdas 
+  LambdaKey:
+    Type: String
+    Default: spamDetector2.zip
+  RuleSetName:
+    Type: String
+    Default: cf_hw3_rule_set
+  ReceiptRuleName:
+    Type: String
+    Default: cf_hw3_receipt_rule
+Resources:
+  EmailLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref LambdaBucket
+        S3Key: !Ref LambdaKey
+      Runtime: python3.6
+      Role: !GetAtt LambdaRole.Arn
+      Handler: lambda_function.lambda_handler
+      FunctionName: cf_lambda_function
+      Layers:
+        - >-
+          arn:aws:lambda:us-east-1:668099181075:layer:AWSLambda-Python36-SciPy1x:37
+
+  LamdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref EmailLambda
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn:
+        Fn::Sub: arn:aws:s3:::${SESBucket}
+
+  LambdaRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action:
+                - 'sts:AssumeRole'
+      Description: "hw3-lambda-role"
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Path: "/"
+      RoleName: hw3-lambda-role
+
+  SESEmailBucket:
+    DependsOn: LamdaPermission
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref SESBucket
+      VersioningConfiguration: 
+        Status: Enabled
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: FALSE
+        BlockPublicPolicy: FALSE
+        IgnorePublicAcls: FALSE
+        RestrictPublicBuckets: FALSE
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:Put
+            Function: !GetAtt EmailLambda.Arn
+  SESBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref SESEmailBucket
+      PolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          -
+            Sid: AllowSESPuts
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub arn:aws:s3:::${SESEmailBucket}/*
+  SesRuleSet:
+    Type: 'AWS::SES::ReceiptRuleSet'
+  SesRule:
+    Type: 'AWS::SES::ReceiptRule'
+    Properties:
+      RuleSetName: hw3_rule_set
+      Rule:
+        Actions:
+          - S3Action:
+              BucketName: !Ref SESEmailBucket
+        Enabled: true
+        TlsPolicy: Optional
+        ScanEnabled: false
+      RuleSetName: !Ref SesRuleSet
