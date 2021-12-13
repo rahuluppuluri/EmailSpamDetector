@@ -32,8 +32,8 @@ def lambda_handler(event, context):
     # from_address = email_item.get('From')
 
     # set the notebook endpoint
-    endpoint_default = 'sms-spam-classifier-mxnet-2021-11-18-06-51-19-466'
-    endpoint_name = os.getenv('E1',default = endpoint_default)
+    endpoint = 'sms-spam-classifier-mxnet-2021-11-18-06-51-19-466'
+    endpoint_name = os.environ.get('e1', endpoint)
 
     # preprocess the email data
     body = body.strip()
